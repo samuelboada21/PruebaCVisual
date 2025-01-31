@@ -12,12 +12,19 @@ namespace PruebaCVisual.Controllers
     {
         private readonly DatabaseContext _context;
         private readonly string _connectionString;
+        private readonly string _logPath = "Logs/";
 
         //constructor
         public PaymentNotificationsController(DatabaseContext context)
         { 
             _context = context;
             _connectionString = _context.Database.GetConnectionString();
+
+            //Verifico si existe la carpeta Logs, si no, entonces la creo
+            if (!Directory.Exists(_logPath))
+            {
+                Directory.CreateDirectory(_logPath);
+            }
         }
 
         //POST: /api/webhook/payments
@@ -26,6 +33,7 @@ namespace PruebaCVisual.Controllers
         {
             if (paymentNotification == null)
             {
+                LogTransaction("Datos de pago no proporcionados", "Error");
                 return BadRequest("Datos de pago no proporcionados");
             }
 
@@ -51,12 +59,22 @@ namespace PruebaCVisual.Controllers
                         await command.ExecuteNonQueryAsync();
                     }
                 }
+                LogTransaction($"Pago  {paymentNotification.TransaccionID} registrado correctamente", "Exito");
                 return CreatedAtAction(nameof(CreatePaymentNotification), new { id = paymentNotification.Id }, paymentNotification);
             }
             catch (Exception ex)
             {
+                LogTransaction($"No se pudo procesar la solicitud --> {ex.Message}", "Error");
                 return StatusCode(500, $"Error al procesar la solicitud: {ex.Message}");
             }
+        }
+
+        private void LogTransaction(string message, string status)
+        {
+            var logFile = $"{_logPath}transacciones_{DateTime.UtcNow:yyyyMMdd}.log";
+            var logMessage = $"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} - Estado: {status} - {message}\n";
+
+            System.IO.File.AppendAllText(logFile, logMessage);
         }
     }
 }
