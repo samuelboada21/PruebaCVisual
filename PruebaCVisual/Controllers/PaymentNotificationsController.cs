@@ -1,8 +1,10 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using PruebaCVisual.Data;
 using PruebaCVisual.Models;
+using Stripe;
 
 namespace PruebaCVisual.Controllers
 {
@@ -10,17 +12,17 @@ namespace PruebaCVisual.Controllers
     [ApiController]
     public class PaymentNotificationsController : ControllerBase
     {
-        private readonly DatabaseContext _context;
+        private readonly string _stripeSecret;
         private readonly string _connectionString;
-        private readonly string _logPath = "Logs/";
+        private readonly string _logPath = "logs/";
+        private readonly IConfiguration _configuration;
 
-        //constructor
-        public PaymentNotificationsController(DatabaseContext context)
-        { 
-            _context = context;
-            _connectionString = _context.Database.GetConnectionString();
+        public PaymentNotificationsController(DatabaseContext context, IOptions<StripeSettings> stripeSettings, IConfiguration configuration)
+        {
+            _stripeSecret = stripeSettings.Value.SecretKey;
+            _connectionString = configuration.GetConnectionString("DefaultConnection");
+            _configuration = configuration;
 
-            //Verifico si existe la carpeta Logs, si no, entonces la creo
             if (!Directory.Exists(_logPath))
             {
                 Directory.CreateDirectory(_logPath);
@@ -29,43 +31,53 @@ namespace PruebaCVisual.Controllers
 
         //POST: /api/webhook/payments
         [HttpPost("webhook/payments")]
-        public async Task<IActionResult> CreatePaymentNotification([FromBody] PaymentNotification paymentNotification)
+        public async Task<IActionResult> ReceivePaymentNotification()
         {
-            if (paymentNotification == null)
-            {
-                LogTransaction("Datos de pago no proporcionados", "Error");
-                return BadRequest("Datos de pago no proporcionados");
-            }
+            var signatureHeader = Request.Headers["Stripe-Signature"];
+            // Se obtiene el secret del webhook desde la configuración
+            var secret = _configuration.GetValue<string>("Stripe:WebHookSecret"); 
+            var body = await new StreamReader(Request.Body).ReadToEndAsync();
 
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
-                { 
-                    await connection.OpenAsync();
+                // Verifiao la firma
+                var stripeEvent = EventUtility.ConstructEvent(
+                    body,
+                    signatureHeader,
+                    secret
+                );
 
-                    //Llamo al procedimiento almacenado para insertar
-                    using (var command = new SqlCommand("sp_InsertPaymentNotification", connection))
+                if (stripeEvent.Type == "payment_intent.succeeded")
+                {
+                    var paymentIntent = stripeEvent.Data.Object as PaymentIntent;
+
+                    using (var connection = new SqlConnection(_connectionString))
                     {
-                        command.CommandType = System.Data.CommandType.StoredProcedure;
+                        await connection.OpenAsync();
+                        using (var command = new SqlCommand("sp_InsertPaymentNotification", connection))
+                        {
+                            command.CommandType = System.Data.CommandType.StoredProcedure;
+                            command.Parameters.AddWithValue("@FechaHora", DateTime.UtcNow);
+                            command.Parameters.AddWithValue("@TransaccionID", paymentIntent.Id);
+                            command.Parameters.AddWithValue("@Estado", paymentIntent.Status);
+                            command.Parameters.AddWithValue("@Monto", paymentIntent.AmountReceived / 100m);  // Stripe envía los montos en centavos
+                            command.Parameters.AddWithValue("@Banco", "Stripe");
+                            command.Parameters.AddWithValue("@MetodoPago", paymentIntent.PaymentMethodTypes[0]);
 
-                        //Parámetros para el procedimiento almacenado
-                        command.Parameters.AddWithValue("@FechaHora", paymentNotification.FechaHora);
-                        command.Parameters.AddWithValue("@TransaccionID", paymentNotification.TransaccionID);
-                        command.Parameters.AddWithValue("@Estado", paymentNotification.Estado);
-                        command.Parameters.AddWithValue("@Monto", paymentNotification.Monto);
-                        command.Parameters.AddWithValue("@Banco", paymentNotification.Banco);
-                        command.Parameters.AddWithValue("@MetodoPago", paymentNotification.MetodoPago);
-
-                        await command.ExecuteNonQueryAsync();
+                            await command.ExecuteNonQueryAsync();
+                        }
                     }
+
+                    LogTransaction($"Pago {paymentIntent.Id} registrado correctamente", "Exito");
+                    return Ok();
                 }
-                LogTransaction($"Pago  {paymentNotification.TransaccionID} registrado correctamente", "Exito");
-                return CreatedAtAction(nameof(CreatePaymentNotification), new { id = paymentNotification.Id }, paymentNotification);
+
+                return BadRequest();
             }
             catch (Exception ex)
             {
-                LogTransaction($"No se pudo procesar la solicitud --> {ex.Message}", "Error");
-                return StatusCode(500, $"Error al procesar la solicitud: {ex.Message}");
+                LogTransaction($" No se pudo registrar el pago: {ex.Message}", "Error");
+                return StatusCode(400, $"Webhook Error: {ex.Message}");
             }
         }
 

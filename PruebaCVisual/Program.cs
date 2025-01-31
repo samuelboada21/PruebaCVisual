@@ -1,8 +1,15 @@
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using PruebaCVisual.Data;
+using PruebaCVisual.Models;
+using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
+
+//Inyecto Stripe
+builder.Services.Configure<StripeSettings>(builder.Configuration.GetSection("Stripe"));
+
+// Configuro la clave secreta de Stripe
+StripeConfiguration.ApiKey = builder.Configuration["Stripe:SecretKey"];
 
 // Agregar conexión a la base de datos SQL Server
 builder.Services.AddDbContext<DatabaseContext>(options =>
