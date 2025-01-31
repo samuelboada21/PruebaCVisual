@@ -69,6 +69,86 @@ namespace PruebaCVisual.Controllers
             }
         }
 
+        //GET: /api/webhook/payments
+        [HttpGet("webhook/payments")]
+        public async Task<IActionResult> GetAllPayments()
+        {
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                { 
+                    await connection.OpenAsync();
+                    using (var command = new SqlCommand("GetAllPaymentNotifications", connection))
+                    { 
+                        command.CommandType = System.Data.CommandType.StoredProcedure;
+                        using (var reader = await command.ExecuteReaderAsync())
+                        {
+                            var payments = new List<PaymentNotification>();
+                            while (await reader.ReadAsync()) 
+                            {
+                                payments.Add(new PaymentNotification
+                                {
+                                    Id = reader.GetInt32(0),
+                                    FechaHora = reader.GetDateTime(1),
+                                    TransaccionID = reader.GetString(2),
+                                    Estado = reader.GetString(3),
+                                    Monto = reader.GetDecimal(4),
+                                    Banco = reader.GetString(5),
+                                    MetodoPago = reader.GetString(6)
+                                });
+                            }
+                            return Ok(payments);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) 
+            {
+                return StatusCode(500, $"Error al obtener los pagos: {ex.Message}");
+            }
+        }
+
+        //GET: /api/webhook/payments/{id}
+        [HttpGet("webhook/payments/{id}")]
+        public async Task<IActionResult> GetPaymentById(int id)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString)) 
+                {
+                    await connection.OpenAsync();
+                    using (var command = new SqlCommand("GetPaymentNotificationById", connection))
+                    {
+                        command.CommandType = System.Data.CommandType.StoredProcedure;
+                        command.Parameters.AddWithValue("@Id", id);
+
+                        using (var reader = await command.ExecuteReaderAsync())
+                        {
+                            if (await reader.ReadAsync())
+                            {
+                                var payment = new PaymentNotification
+                                {
+                                    Id = reader.GetInt32(0),
+                                    FechaHora = reader.GetDateTime(1),
+                                    TransaccionID = reader.GetString(2),
+                                    Estado = reader.GetString(3),
+                                    Monto = reader.GetDecimal(4),
+                                    Banco = reader.GetString(5),
+                                    MetodoPago = reader.GetString(6)
+                                };
+                                return Ok(payment);
+                            }
+                            return NotFound($"No se encontró el pago con ID {id}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) 
+            {
+                return StatusCode(500, $"Error al obtener el pago: {ex.Message}");
+            }
+        }
+
         private void LogTransaction(string message, string status)
         {
             var logFile = $"{_logPath}transacciones_{DateTime.UtcNow:yyyyMMdd}.log";
