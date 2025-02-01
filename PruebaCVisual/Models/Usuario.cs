@@ -16,6 +16,11 @@ namespace PruebaCVisual.Models
         public int Apellido { get; set; }
 
         [Required]
+        [MaxLength(100)]
+        [EmailAddress]
+        public string Correo { get; set; }
+
+        [Required]
         [MaxLength(255)]
         public string Contrasenia { get; set; }
 

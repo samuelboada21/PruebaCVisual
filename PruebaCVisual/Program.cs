@@ -1,9 +1,29 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using PruebaCVisual.Data;
 using PruebaCVisual.Models;
 using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configuración de JWT
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+        };
+    });
+
 
 //Inyecto Stripe
 builder.Services.Configure<StripeSettings>(builder.Configuration.GetSection("Stripe"));
@@ -31,6 +51,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 app.UseHttpsRedirection();
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
