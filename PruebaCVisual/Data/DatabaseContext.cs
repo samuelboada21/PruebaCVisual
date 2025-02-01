@@ -8,5 +8,6 @@ namespace PruebaCVisual.Data
         public DatabaseContext(DbContextOptions<DatabaseContext> options) : base(options) { }
 
         public DbSet<PaymentNotification> PaymentNotifications { get; set; }
+        public DbSet<Usuario> Usuarios { get; set; }
     }
 }
