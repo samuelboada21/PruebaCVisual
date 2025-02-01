@@ -69,9 +69,10 @@ namespace PruebaCVisual.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("Apellido")
+                    b.Property<string>("Apellido")
+                        .IsRequired()
                         .HasMaxLength(50)
-                        .HasColumnType("int");
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<string>("Contrasenia")
                         .IsRequired()

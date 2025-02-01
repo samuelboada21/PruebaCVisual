@@ -13,7 +13,7 @@ namespace PruebaCVisual.Models
 
         [Required]
         [MaxLength(50)]
-        public int Apellido { get; set; }
+        public String Apellido { get; set; }
 
         [Required]
         [MaxLength(100)]

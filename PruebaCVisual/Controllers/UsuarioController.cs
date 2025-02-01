@@ -67,34 +67,39 @@ namespace PruebaCVisual.Controllers
             byte[] salt = new byte[16];
             RandomNumberGenerator.Fill(salt);
 
-            string hashedPassword = Convert.ToBase64String(KeyDerivation.Pbkdf2(
-                    password: password,
-                    salt: salt,
-                    prf: KeyDerivationPrf.HMACSHA256,
-                    iterationCount: 10000,
-                    numBytesRequested: 256/8));
+            string hashedPassword = Convert.ToBase64String(salt) + Convert.ToBase64String(KeyDerivation.Pbkdf2(
+                password: password,
+                salt: salt,
+                prf: KeyDerivationPrf.HMACSHA256,
+                iterationCount: 10000,
+                numBytesRequested: 256 / 8));
 
             return hashedPassword;
         }
 
         private bool VerifyPassword(string password, string hashedPassword)
         {
-            string[] parts = hashedPassword.Split(':');
-            if (parts.Length != 2) return false;
+            // Verificar que el hashedPassword no sea nulo
+            if (string.IsNullOrEmpty(hashedPassword))
+            {
+                return false;
+            }
+            byte[] salt = Convert.FromBase64String(hashedPassword.Substring(0, 24)); 
+            byte[] storedHash = Convert.FromBase64String(hashedPassword.Substring(24));
 
-            byte[] salt = Convert.FromBase64String(parts[0]);
-            byte[] storedHash = Convert.FromBase64String(parts[1]);
-
-            using (var pbkdf2 = new Rfc2898DeriveBytes(password, salt, 100000, HashAlgorithmName.SHA256))
+            using (var pbkdf2 = new Rfc2898DeriveBytes(password, salt, 10000, HashAlgorithmName.SHA256))
             {
                 byte[] computedHash = pbkdf2.GetBytes(32);
+
+                // Comparo el hash generado con el hash almacenado en la base de datos
                 return CryptographicOperations.FixedTimeEquals(computedHash, storedHash);
             }
         }
 
+
         private string GenerateJwtToken(Usuario usuario)
         {
-            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:SecretKey"]));
+            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
             var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
             var claims = new[]
