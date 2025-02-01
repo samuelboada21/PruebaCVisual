@@ -1,15 +1,20 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PruebaCVisual.Data;
 using PruebaCVisual.Models;
 using Stripe;
+using System.IdentityModel.Tokens.Jwt;
+
 
 namespace PruebaCVisual.Controllers
 {
     [Route("api")]
     [ApiController]
+    [Authorize]
     public class PaymentNotificationsController : ControllerBase
     {
         private readonly string _stripeSecret;
@@ -33,6 +38,14 @@ namespace PruebaCVisual.Controllers
         [HttpPost("webhook/payments")]
         public async Task<IActionResult> ReceivePaymentNotification()
         {
+            int usuarioId;
+            var claimSub = User.FindFirst(ClaimTypes.NameIdentifier)
+                           ?? User.FindFirst(JwtRegisteredClaimNames.Sub);
+            if (claimSub == null || !int.TryParse(claimSub.Value, out usuarioId))
+            {
+                return Unauthorized("No se pudo determinar el usuario autenticado.");
+            }
+
             var signatureHeader = Request.Headers["Stripe-Signature"];
             // Se obtiene el secret del webhook desde la configuración
             var secret = _configuration.GetValue<string>("Stripe:WebHookSecret"); 
@@ -50,6 +63,10 @@ namespace PruebaCVisual.Controllers
                 if (stripeEvent.Type == "payment_intent.succeeded")
                 {
                     var paymentIntent = stripeEvent.Data.Object as PaymentIntent;
+                    if (paymentIntent == null)
+                    {
+                        return BadRequest("Objeto de pago inválido.");
+                    }
 
                     using (var connection = new SqlConnection(_connectionString))
                     {
@@ -60,9 +77,10 @@ namespace PruebaCVisual.Controllers
                             command.Parameters.AddWithValue("@FechaHora", DateTime.UtcNow);
                             command.Parameters.AddWithValue("@TransaccionID", paymentIntent.Id);
                             command.Parameters.AddWithValue("@Estado", paymentIntent.Status);
-                            command.Parameters.AddWithValue("@Monto", paymentIntent.AmountReceived / 100m);  // Stripe envía los montos en centavos
+                            command.Parameters.AddWithValue("@Monto", paymentIntent.AmountReceived / 100m);
                             command.Parameters.AddWithValue("@Banco", "Stripe");
                             command.Parameters.AddWithValue("@MetodoPago", paymentIntent.PaymentMethodTypes[0]);
+                            command.Parameters.AddWithValue("@UsuarioId", usuarioId);
 
                             await command.ExecuteNonQueryAsync();
                         }
@@ -106,7 +124,8 @@ namespace PruebaCVisual.Controllers
                                     Estado = reader.GetString(3),
                                     Monto = reader.GetDecimal(4),
                                     Banco = reader.GetString(5),
-                                    MetodoPago = reader.GetString(6)
+                                    MetodoPago = reader.GetString(6),
+                                    UsuarioId = reader.GetInt32(7)
                                 });
                             }
                             return Ok(payments);
@@ -146,7 +165,8 @@ namespace PruebaCVisual.Controllers
                                     Estado = reader.GetString(3),
                                     Monto = reader.GetDecimal(4),
                                     Banco = reader.GetString(5),
-                                    MetodoPago = reader.GetString(6)
+                                    MetodoPago = reader.GetString(6),
+                                    UsuarioId = reader.GetInt32(7)
                                 };
                                 return Ok(payment);
                             }

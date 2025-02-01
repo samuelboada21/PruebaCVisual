@@ -109,6 +109,7 @@ namespace PruebaCVisual.Controllers
                 new Claim("nombre", usuario.Nombre),
                 new Claim("rol", usuario.Rol),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+
             };
 
             var token = new JwtSecurityToken(

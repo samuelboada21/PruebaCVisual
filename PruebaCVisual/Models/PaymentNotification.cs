@@ -32,5 +32,10 @@ namespace PruebaCVisual.Models
         [StringLength(30)]
         public string MetodoPago {  get; set; } = string.Empty;
 
+        [Required]
+        public int UsuarioId { get; set; }
+
+        [ForeignKey("UsuarioId")]
+        public Usuario Usuario { get; set; }
     }
 }
