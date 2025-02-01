@@ -19,8 +19,9 @@ namespace PruebaCVisual.Controllers
     {
         private readonly string _stripeSecret;
         private readonly string _connectionString;
-        private readonly string _logPath = "logs/";
+        private readonly string _logPath = "Logs/";
         private readonly IConfiguration _configuration;
+
 
         public PaymentNotificationsController(DatabaseContext context, IOptions<StripeSettings> stripeSettings, IConfiguration configuration)
         {
@@ -34,23 +35,50 @@ namespace PruebaCVisual.Controllers
             }
         }
 
-        //POST: /api/webhook/payments
-        [HttpPost("webhook/payments")]
-        public async Task<IActionResult> ReceivePaymentNotification()
+        //POST: /api/create-payment-intent
+        [HttpPost("create-payment-intent")]
+        public async Task<IActionResult> CreatePaymentIntent([FromBody] PaymentRequest request)
         {
             int usuarioId;
-            var claimSub = User.FindFirst(ClaimTypes.NameIdentifier)
-                           ?? User.FindFirst(JwtRegisteredClaimNames.Sub);
+            var claimSub = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst(JwtRegisteredClaimNames.Sub);
             if (claimSub == null || !int.TryParse(claimSub.Value, out usuarioId))
             {
                 return Unauthorized("No se pudo determinar el usuario autenticado.");
             }
 
+            try
+            {
+                var options = new PaymentIntentCreateOptions
+                {
+                    Amount = (long)(request.Monto * 100),
+                    Currency = "usd",
+                    PaymentMethodTypes = new List<string> { "card" },
+                    Metadata = new Dictionary<string, string>
+                    {
+                        { "usuarioId", usuarioId.ToString() }
+                    }
+                };
+
+                var service = new PaymentIntentService();
+                var paymentIntent = await service.CreateAsync(options);
+
+                return Ok(new { PaymentIntentId = paymentIntent.Id, ClientSecret = paymentIntent.ClientSecret });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error al crear el pago: {ex.Message}");
+            }
+        }
+
+        //POST: /api/webhook/payments
+        [HttpPost("webhook/payments")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ReceivePaymentNotification()
+        {
             var signatureHeader = Request.Headers["Stripe-Signature"];
             // Se obtiene el secret del webhook desde la configuración
-            var secret = _configuration.GetValue<string>("Stripe:WebHookSecret"); 
+            var secret = _configuration.GetValue<string>("Stripe:WebHookSecret");
             var body = await new StreamReader(Request.Body).ReadToEndAsync();
-
             try
             {
                 // Verifiao la firma
@@ -59,15 +87,9 @@ namespace PruebaCVisual.Controllers
                     signatureHeader,
                     secret
                 );
-
                 if (stripeEvent.Type == "payment_intent.succeeded")
                 {
                     var paymentIntent = stripeEvent.Data.Object as PaymentIntent;
-                    if (paymentIntent == null)
-                    {
-                        return BadRequest("Objeto de pago inválido.");
-                    }
-
                     using (var connection = new SqlConnection(_connectionString))
                     {
                         await connection.OpenAsync();
@@ -77,15 +99,13 @@ namespace PruebaCVisual.Controllers
                             command.Parameters.AddWithValue("@FechaHora", DateTime.UtcNow);
                             command.Parameters.AddWithValue("@TransaccionID", paymentIntent.Id);
                             command.Parameters.AddWithValue("@Estado", paymentIntent.Status);
-                            command.Parameters.AddWithValue("@Monto", paymentIntent.AmountReceived / 100m);
+                            command.Parameters.AddWithValue("@Monto", paymentIntent.AmountReceived / 100m);  // Stripe envía los montos en centavos
                             command.Parameters.AddWithValue("@Banco", "Stripe");
                             command.Parameters.AddWithValue("@MetodoPago", paymentIntent.PaymentMethodTypes[0]);
-                            command.Parameters.AddWithValue("@UsuarioId", usuarioId);
 
                             await command.ExecuteNonQueryAsync();
                         }
                     }
-
                     LogTransaction($"Pago {paymentIntent.Id} registrado correctamente", "Exito");
                     return Ok();
                 }
@@ -98,6 +118,7 @@ namespace PruebaCVisual.Controllers
                 return StatusCode(400, $"Webhook Error: {ex.Message}");
             }
         }
+
 
         //GET: /api/webhook/payments
         [HttpGet("webhook/payments")]

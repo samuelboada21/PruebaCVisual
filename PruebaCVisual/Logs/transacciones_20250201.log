@@ -1,0 +1,7 @@
+2025-02-01 21:58:17 - Estado: Info - Evento recibido: payment_intent.created - ID: evt_3QnohiR5LbpGprqY2eC07yfn
+2025-02-01 21:58:17 - Estado: Info - Metadata guardada: usuarioId = 3, PaymentIntentID = pi_3QnohiR5LbpGprqY2RMQpfr9
+2025-02-01 21:58:24 - Estado: Info - Evento recibido: payment_intent.succeeded - ID: evt_3QnohoR5LbpGprqY0mnsa5UZ
+2025-02-01 21:58:24 - Estado: Info - Evento recibido: charge.succeeded - ID: evt_3QnohoR5LbpGprqY0CKne2cF
+2025-02-01 21:58:24 - Estado: Info - Evento recibido: payment_intent.created - ID: evt_3QnohoR5LbpGprqY0aGLc1dW
+2025-02-01 21:58:24 - Estado: Advertencia - No se encontró metadata en payment_intent.created - PaymentIntentID = pi_3QnohoR5LbpGprqY0V3kwhdl
+2025-02-01 21:58:26 - Estado: Info - Evento recibido: charge.updated - ID: evt_3QnohoR5LbpGprqY0SZzwD4u
