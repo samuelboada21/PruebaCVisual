@@ -17,17 +17,15 @@ namespace PruebaCVisual.Controllers
     [Authorize]
     public class PaymentNotificationsController : ControllerBase
     {
-        private readonly string _stripeSecret;
         private readonly string _connectionString;
         private readonly string _logPath = "Logs/";
-        private readonly IConfiguration _configuration;
+        private readonly string _webhookSecret;
 
 
-        public PaymentNotificationsController(DatabaseContext context, IOptions<StripeSettings> stripeSettings, IConfiguration configuration)
+        public PaymentNotificationsController(IConfiguration configuration)
         {
-            _stripeSecret = stripeSettings.Value.SecretKey;
             _connectionString = configuration.GetConnectionString("DefaultConnection");
-            _configuration = configuration;
+            _webhookSecret = configuration["Stripe:WebHookSecret"];
 
             if (!Directory.Exists(_logPath))
             {
@@ -35,10 +33,11 @@ namespace PruebaCVisual.Controllers
             }
         }
 
-        //POST: /api/create-payment-intent
-        [HttpPost("create-payment-intent")]
-        public async Task<IActionResult> CreatePaymentIntent([FromBody] PaymentRequest request)
+        //Creamos la sesion desde un cliente, recuperamos la URL de stripe
+        [HttpPost("create-checkout-session")]
+        public async Task<IActionResult> CreateCheckoutSession([FromBody] CheckoutSessionRequest request)
         {
+            // Obtener el usuario logueado por claim
             int usuarioId;
             var claimSub = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst(JwtRegisteredClaimNames.Sub);
             if (claimSub == null || !int.TryParse(claimSub.Value, out usuarioId))
@@ -46,28 +45,44 @@ namespace PruebaCVisual.Controllers
                 return Unauthorized("No se pudo determinar el usuario autenticado.");
             }
 
-            try
+            // Validar que successUrl y cancelUrl lleguen desde el cliente
+            if (string.IsNullOrEmpty(request.SuccessUrl) || string.IsNullOrEmpty(request.CancelUrl))
             {
-                var options = new PaymentIntentCreateOptions
+                return BadRequest("Las URLs de éxito y cancelación son obligatorias.");
+            }
+
+            var options = new Stripe.Checkout.SessionCreateOptions
+            {
+                LineItems = request.Items.Select(item => new Stripe.Checkout.SessionLineItemOptions
                 {
-                    Amount = (long)(request.Monto * 100),
-                    Currency = "usd",
-                    PaymentMethodTypes = new List<string> { "card" },
-                    Metadata = new Dictionary<string, string>
+                    PriceData = new Stripe.Checkout.SessionLineItemPriceDataOptions
                     {
-                        { "usuarioId", usuarioId.ToString() }
-                    }
-                };
+                        Currency = item.Currency,
+                        UnitAmount = item.UnitAmount,
+                        ProductData = new Stripe.Checkout.SessionLineItemPriceDataProductDataOptions
+                        {
+                            Name = item.Name,
+                        }
+                    },
+                    Quantity = item.Quantity,
+                }).ToList(),
+                Mode = "payment",
+                SuccessUrl = request.SuccessUrl,
+                CancelUrl = request.CancelUrl,
+                Metadata = new Dictionary<string, string>
+        {
+            { "usuarioId", usuarioId.ToString() }
+        }
+            };
 
-                var service = new PaymentIntentService();
-                var paymentIntent = await service.CreateAsync(options);
+            var service = new Stripe.Checkout.SessionService();
+            var session = await service.CreateAsync(options);
 
-                return Ok(new { PaymentIntentId = paymentIntent.Id, ClientSecret = paymentIntent.ClientSecret });
-            }
-            catch (Exception ex)
+            return Ok(new
             {
-                return StatusCode(500, $"Error al crear el pago: {ex.Message}");
-            }
+                SessionId = session.Id,
+                Url = session.Url
+            });
         }
 
         //POST: /api/webhook/payments
@@ -76,20 +91,45 @@ namespace PruebaCVisual.Controllers
         public async Task<IActionResult> ReceivePaymentNotification()
         {
             var signatureHeader = Request.Headers["Stripe-Signature"];
-            // Se obtiene el secret del webhook desde la configuración
-            var secret = _configuration.GetValue<string>("Stripe:WebHookSecret");
             var body = await new StreamReader(Request.Body).ReadToEndAsync();
+
             try
             {
-                // Verifiao la firma
-                var stripeEvent = EventUtility.ConstructEvent(
-                    body,
-                    signatureHeader,
-                    secret
-                );
-                if (stripeEvent.Type == "payment_intent.succeeded")
+                var stripeEvent = EventUtility.ConstructEvent(body, signatureHeader, _webhookSecret);
+
+                //Solo recibimos el evendo de chackout completado
+                if (stripeEvent.Type == "checkout.session.completed")
                 {
-                    var paymentIntent = stripeEvent.Data.Object as PaymentIntent;
+                    var session = stripeEvent.Data.Object as Stripe.Checkout.Session;
+                    if (session == null)
+                    {
+                        return BadRequest("Objeto de sesión inválido.");
+                    }
+
+                    string paymentIntentId = session.PaymentIntentId;
+                    if (string.IsNullOrEmpty(paymentIntentId))
+                    {
+                        return BadRequest("Faltan datos en la sesión completada.");
+                    }
+
+                    //UsuarioId desde la Metadata
+                    string usuarioIdStr = session.Metadata?.ContainsKey("usuarioId") == true ? session.Metadata["usuarioId"] : null;
+                    if (string.IsNullOrEmpty(usuarioIdStr) || !int.TryParse(usuarioIdStr, out int usuarioId))
+                    {
+                        return BadRequest("Faltan datos en la sesión completada.");
+                    }
+
+                    var paymentIntentService = new PaymentIntentService();
+                    var paymentIntent = await paymentIntentService.GetAsync(paymentIntentId);
+
+                    if (paymentIntent == null)
+                    {
+                        return BadRequest("No se pudo obtener información del pago.");
+                    }
+
+                    // Obtener el método de pago usado
+                    string metodoPago = paymentIntent.PaymentMethodTypes.FirstOrDefault() ?? "N/A";
+                    //Guardar en la DB
                     using (var connection = new SqlConnection(_connectionString))
                     {
                         await connection.OpenAsync();
@@ -99,14 +139,15 @@ namespace PruebaCVisual.Controllers
                             command.Parameters.AddWithValue("@FechaHora", DateTime.UtcNow);
                             command.Parameters.AddWithValue("@TransaccionID", paymentIntent.Id);
                             command.Parameters.AddWithValue("@Estado", paymentIntent.Status);
-                            command.Parameters.AddWithValue("@Monto", paymentIntent.AmountReceived / 100m);  // Stripe envía los montos en centavos
+                            command.Parameters.AddWithValue("@Monto", paymentIntent.AmountReceived / 100m);
                             command.Parameters.AddWithValue("@Banco", "Stripe");
-                            command.Parameters.AddWithValue("@MetodoPago", paymentIntent.PaymentMethodTypes[0]);
+                            command.Parameters.AddWithValue("@MetodoPago", metodoPago);
+                            command.Parameters.AddWithValue("@UsuarioId", usuarioId);
 
                             await command.ExecuteNonQueryAsync();
                         }
                     }
-                    LogTransaction($"Pago {paymentIntent.Id} registrado correctamente", "Exito");
+                    LogTransaction($"Pago {paymentIntent.Id} registrado correctamente con método: {metodoPago}", "Exito");
                     return Ok();
                 }
 

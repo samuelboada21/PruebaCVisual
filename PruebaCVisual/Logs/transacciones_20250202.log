@@ -1,0 +1,7 @@
+2025-02-02 22:38:59 - Estado: Error -  No se pudo registrar el pago: The expected signature was not found in the Stripe-Signature header. Make sure you're using the correct webhook secret (whsec_) and confirm the incoming request came from Stripe.
+2025-02-02 22:42:49 - Estado: Exito - Pago pi_3QoBsJR5LbpGprqY1959dcgT registrado correctamente
+2025-02-02 22:56:26 - Estado: Exito - Pago pi_3QoC5UR5LbpGprqY2ddUuUEV registrado correctamente
+2025-02-02 23:20:19 - Estado: Exito - Pago pi_3QoCSaR5LbpGprqY2SV2DQbL registrado correctamente con método MASTERCARD
+2025-02-02 23:21:42 - Estado: Exito - Pago pi_3QoCTSR5LbpGprqY1vJfatdA registrado correctamente con método N/A
+2025-02-02 23:25:31 - Estado: Exito - Pago pi_3QoCXPR5LbpGprqY0zJyyykH registrado correctamente con método: cashapp
+2025-02-02 23:26:54 - Estado: Exito - Pago pi_3QoCYvR5LbpGprqY2kD7tops registrado correctamente con método: link
