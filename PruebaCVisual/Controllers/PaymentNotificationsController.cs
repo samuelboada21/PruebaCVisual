@@ -167,16 +167,32 @@ namespace PruebaCVisual.Controllers
         {
             try
             {
+                // Obtener usuario logueado desde los claims
+                var claimSub = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst(JwtRegisteredClaimNames.Sub);
+                var claimRole = User.FindFirst("rol");
+
+                if (claimSub == null || !int.TryParse(claimSub.Value, out int usuarioId))
+                {
+                    return Unauthorized("No se pudo determinar el usuario autenticado.");
+                }
+
+                bool esAdmin = claimRole != null && claimRole.Value.Equals("Administrador", StringComparison.OrdinalIgnoreCase);
                 using (var connection = new SqlConnection(_connectionString))
-                { 
+                {
                     await connection.OpenAsync();
-                    using (var command = new SqlCommand("GetAllPaymentNotifications", connection))
-                    { 
+                    using (var command = new SqlCommand(esAdmin ? "GetAllPaymentNotifications" : "GetPaymentNotificationsByUserId", connection))
+                    {
                         command.CommandType = System.Data.CommandType.StoredProcedure;
+
+                        if (!esAdmin)
+                        {
+                            command.Parameters.AddWithValue("@UsuarioId", usuarioId);
+                        }
+
                         using (var reader = await command.ExecuteReaderAsync())
                         {
                             var payments = new List<PaymentNotification>();
-                            while (await reader.ReadAsync()) 
+                            while (await reader.ReadAsync())
                             {
                                 payments.Add(new PaymentNotification
                                 {
@@ -195,7 +211,7 @@ namespace PruebaCVisual.Controllers
                     }
                 }
             }
-            catch (Exception ex) 
+            catch (Exception ex)
             {
                 return StatusCode(500, $"Error al obtener los pagos: {ex.Message}");
             }
