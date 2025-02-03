@@ -8,6 +8,17 @@ using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
 
+//CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:5173") // El puerto de tu frontend
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 // Configuración de JWT
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -23,10 +34,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
         };
     });
-
-
-//Inyecto Stripe
-builder.Services.Configure<StripeSettings>(builder.Configuration.GetSection("Stripe"));
 
 // Configuro la clave secreta de Stripe
 StripeConfiguration.ApiKey = builder.Configuration["Stripe:SecretKey"];
@@ -50,6 +57,9 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+//CORS
+app.UseCors("AllowFrontend");
+
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();

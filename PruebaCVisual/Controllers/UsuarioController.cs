@@ -43,7 +43,7 @@ namespace PruebaCVisual.Controllers
             _context.Usuarios.Add(usuario);
             await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Usuario registrado exitosamente" });
+            return Ok();
         }
 
         //POST: /api/login
@@ -91,7 +91,6 @@ namespace PruebaCVisual.Controllers
             {
                 byte[] computedHash = pbkdf2.GetBytes(32);
 
-                // Comparo el hash generado con el hash almacenado en la base de datos
                 return CryptographicOperations.FixedTimeEquals(computedHash, storedHash);
             }
         }
